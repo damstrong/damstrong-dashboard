@@ -2,10 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import MarkerClusterGroup from "react-leaflet-cluster";
 import "leaflet/dist/leaflet.css";
 
-// Fix Leaflet marker icons in Next (required)
 import L from "leaflet";
 const icon = L.icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -43,20 +41,15 @@ export default function MapPage() {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        <MarkerClusterGroup chunkedLoading>
-          {points.map((p, i) => (
-            <Marker key={i} position={[p.lat, p.lng]}>
-              <Popup>
-                <b>
-                  {[p.city, p.region].filter(Boolean).join(", ")}{" "}
-                  {p.country ? `(${p.country})` : ""}
-                </b>
-                <br />
-                Visits: {p.count}
-              </Popup>
-            </Marker>
-          ))}
-        </MarkerClusterGroup>
+        {points.map((p, i) => (
+          <Marker key={i} position={[p.lat, p.lng]}>
+            <Popup>
+              <b>{[p.city, p.region].filter(Boolean).join(", ")} {p.country ? `(${p.country})` : ""}</b>
+              <br />
+              Visits: {p.count}
+            </Popup>
+          </Marker>
+        ))}
       </MapContainer>
     </div>
   );
