@@ -8,63 +8,48 @@ const supabaseAdmin = createClient(
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function pickGeo(geo: any) {
-  const lat = geo?.latitude ?? null;
-  const lng = geo?.longitude ?? null;
-  const city = geo?.city ?? null;
-  const region = geo?.region ?? null;
-  const country = geo?.country_name ?? geo?.country ?? null;
-  return { lat, lng, city, region, country };
-}
-
 export async function POST() {
-  // Pull more rows but we will dedupe by IP
+  // Pull more rows but dedupe by IP
   const { data: rows, error } = await supabaseAdmin
     .from("web_events")
-    .select("id, ip")
+    .select("ip")
     .is("lat", null)
     .not("ip", "is", null)
-    .limit(500);
+    .limit(1000);
 
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
   if (!rows || rows.length === 0) {
-    return NextResponse.json({ ok: true, enrichedIps: 0, message: "No rows to enrich" });
+    return NextResponse.json({ ok: true, message: "No rows to enrich", attemptedIps: 0, enrichedIps: 0 });
   }
 
-  // Deduplicate IPs
-  const ips = Array.from(new Set(rows.map((r) => String(r.ip)))).slice(0, 25); // cap to 25 IPs/run
+  const ips = Array.from(new Set(rows.map((r) => String(r.ip)))).slice(0, 25);
 
   let enrichedIps = 0;
   const failures: any[] = [];
 
   for (const ip of ips) {
     try {
-      // Throttle to avoid rate limits
-      await sleep(350);
+      await sleep(250);
 
-      const res = await fetch(`https://ipapi.co/${ip}/json/`, {
+      const res = await fetch(`https://ipwho.is/${ip}`, {
         headers: { "User-Agent": "damstrong-dashboard/1.0" },
       });
 
-      const text = await res.text();
+      const geo = await res.json();
 
-      // ipapi rate limit returns plain text like "Too many requests"
-      if (!text.trim().startsWith("{")) {
-        failures.push({ ip, reason: text.slice(0, 80) });
+      if (!geo?.success || geo?.latitude == null || geo?.longitude == null) {
+        failures.push({ ip, reason: geo?.message || "no_lat_lng" });
         continue;
       }
 
-      const geo = JSON.parse(text);
-      const { lat, lng, city, region, country } = pickGeo(geo);
+      const lat = geo.latitude;
+      const lng = geo.longitude;
+      const city = geo.city ?? null;
+      const region = geo.region ?? null;
+      const country = geo.country ?? null;
 
-      if (lat == null || lng == null) {
-        failures.push({ ip, reason: "no_lat_lng" });
-        continue;
-      }
-
-      // Update ALL rows with this IP that are missing geo
       const upd = await supabaseAdmin
         .from("web_events")
         .update({ lat, lng, city, region, country })
@@ -87,6 +72,6 @@ export async function POST() {
     attemptedIps: ips.length,
     enrichedIps,
     failures,
-    tip: "Run again to continue; this endpoint enriches up to 25 unique IPs per call.",
+    tip: "Run again to continue (25 unique IPs per run).",
   });
 }
