@@ -1,7 +1,7 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
-// TEMP: allow everything through to stop auth redirect loops
-export function middleware(_req: NextRequest) {
+// Netlify is doing the protection now. Do not gate routes here.
+export function middleware() {
   return NextResponse.next();
 }
 
