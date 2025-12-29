@@ -6,12 +6,10 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
 
-  // Always redirect somewhere sane
   const redirectTo = new URL("/", url);
-
   if (!code) return NextResponse.redirect(redirectTo);
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies(); // ✅ <-- this is the fix
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
