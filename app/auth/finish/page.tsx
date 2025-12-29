@@ -4,18 +4,19 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-export default function AuthCallbackPage() {
+export default function AuthFinishPage() {
   const router = useRouter();
   const [msg, setMsg] = useState("Signing you in…");
 
   useEffect(() => {
     async function run() {
-      // If we got implicit tokens in the URL hash, set them
-      const hash = window.location.hash; // "#access_token=...&refresh_token=...&type=magiclink"
+      const hash = window.location.hash;
+
+      // Handle implicit hash tokens
       if (hash && hash.includes("access_token=")) {
-        const params = new URLSearchParams(hash.replace(/^#/, ""));
-        const access_token = params.get("access_token");
-        const refresh_token = params.get("refresh_token");
+        const p = new URLSearchParams(hash.replace(/^#/, ""));
+        const access_token = p.get("access_token");
+        const refresh_token = p.get("refresh_token");
 
         if (access_token && refresh_token) {
           const { error } = await supabase.auth.setSession({
@@ -28,20 +29,22 @@ export default function AuthCallbackPage() {
             return;
           }
         }
+        // Clean URL
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
 
-      // Ensure session exists then go home
+      // Confirm session
       const { data } = await supabase.auth.getSession();
-      if (data.session) router.replace("/");
-      else router.replace("/login?e=missing_session");
+      if (data.session) {
+        router.replace("/");
+        router.refresh();
+      } else {
+        router.replace("/login?e=no_session");
+      }
     }
 
     run();
   }, [router]);
 
-  return (
-    <div style={{ maxWidth: 520, margin: "80px auto", padding: 16 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700 }}>{msg}</h1>
-    </div>
-  );
+  return <div style={{ padding: 24 }}>{msg}</div>;
 }
