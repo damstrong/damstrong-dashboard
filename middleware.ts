@@ -1,5 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+export const config = { matcher: ["/((?!.*\\..*).*)"] };
+
+export function middleware(req: NextRequest) {
+  const res = NextResponse.next();
+  res.headers.set("x-ds-mw", "OFF"); // <-- proof header
+  return res;
+}
+
+
 /**
  * OPTION A: Disable all middleware auth gating (temporary).
  * Keep middleware in place, but allow every request through to stop redirect loops.
