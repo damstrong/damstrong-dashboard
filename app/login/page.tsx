@@ -14,53 +14,33 @@ function LoginInner() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  // ✅ If we landed here from a Supabase magic link, it arrives as:
-  // /login#access_token=...&refresh_token=...&type=magiclink
-  // Consume it, set session, and redirect.
+  // ✅ NEW: handle Supabase PKCE email links: /login?code=...
   useEffect(() => {
-    async function consumeMagicLinkHash() {
-      try {
-        const hash = window.location.hash;
-        if (!hash || !hash.includes("access_token=")) return;
+    async function handleCodeExchange() {
+      const code = params.get("code");
+      if (!code) return;
 
-        const p = new URLSearchParams(hash.replace(/^#/, ""));
-        const access_token = p.get("access_token");
-        const refresh_token = p.get("refresh_token");
+      setBusy(true);
+      setMsg(null);
 
-        if (!access_token || !refresh_token) return;
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
 
-        setBusy(true);
-        setMsg(null);
+      // Clean URL so refresh doesn't keep trying
+      window.history.replaceState({}, document.title, window.location.pathname);
 
-        const { error } = await supabase.auth.setSession({
-          access_token,
-          refresh_token,
-        });
+      setBusy(false);
 
-        // Clean URL so it doesn't keep re-processing on refresh
-        window.history.replaceState(
-          {},
-          document.title,
-          window.location.pathname + window.location.search
-        );
-
-        setBusy(false);
-
-        if (error) {
-          setMsg(error.message);
-          return;
-        }
-
-        router.replace(nextPath);
-        router.refresh();
-      } catch (e: any) {
-        setBusy(false);
-        setMsg(e?.message || "Failed to consume magic link.");
+      if (error) {
+        setMsg(error.message);
+        return;
       }
+
+      router.replace(nextPath);
+      router.refresh();
     }
 
-    consumeMagicLinkHash();
-  }, [router, nextPath]);
+    handleCodeExchange();
+  }, [params, router, nextPath]);
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -81,57 +61,6 @@ function LoginInner() {
 
     router.push(nextPath);
     router.refresh();
-  }
-
-  async function onForgotPassword() {
-    if (!email) {
-      setMsg("Enter your email first.");
-      return;
-    }
-
-    setBusy(true);
-    setMsg(null);
-
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      // Keep it simple: send them back to /login with tokens in hash;
-      // this page now consumes them.
-      redirectTo: `${window.location.origin}/login`,
-    });
-
-    setBusy(false);
-
-    if (error) {
-      setMsg(error.message);
-      return;
-    }
-
-    setMsg("Password reset email sent. Check your inbox.");
-  }
-
-  async function onMagicLink() {
-    if (!email) {
-      setMsg("Enter your email first.");
-      return;
-    }
-
-    setBusy(true);
-    setMsg(null);
-
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/login`,
-      },
-    });
-
-    setBusy(false);
-
-    if (error) {
-      setMsg(error.message);
-      return;
-    }
-
-    setMsg("Magic link sent. Check your inbox.");
   }
 
   return (
@@ -156,7 +85,6 @@ function LoginInner() {
           autoComplete="current-password"
           style={{ padding: 10, border: "1px solid #ccc", borderRadius: 8 }}
         />
-
         <button
           disabled={busy}
           style={{
@@ -169,38 +97,6 @@ function LoginInner() {
           }}
         >
           {busy ? "Signing in..." : "Sign in"}
-        </button>
-
-        <button
-          type="button"
-          onClick={onForgotPassword}
-          disabled={busy}
-          style={{
-            padding: 10,
-            borderRadius: 8,
-            border: "1px solid #000",
-            background: "#fff",
-            color: "#000",
-            cursor: busy ? "not-allowed" : "pointer",
-          }}
-        >
-          Forgot password
-        </button>
-
-        <button
-          type="button"
-          onClick={onMagicLink}
-          disabled={busy}
-          style={{
-            padding: 10,
-            borderRadius: 8,
-            border: "1px solid #000",
-            background: "#fff",
-            color: "#000",
-            cursor: busy ? "not-allowed" : "pointer",
-          }}
-        >
-          Email me a magic link
         </button>
       </form>
 
