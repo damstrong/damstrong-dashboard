@@ -1,7 +1,5 @@
-import dynamic from "next/dynamic";
-
-const MapClient = dynamic(() => import("./MapClient"), { ssr: false });
+import MapShell from "./MapShell";
 
 export default function MapPage() {
-  return <MapClient />;
+  return <MapShell />;
 }
