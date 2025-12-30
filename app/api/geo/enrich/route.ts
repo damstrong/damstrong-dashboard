@@ -9,22 +9,23 @@ const supabaseAdmin = createClient(
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function POST() {
-  // 1️⃣ Pull UNIQUE IPs that still need geo
+  // Pull a bunch of rows missing geo, but we will enrich UNIQUE IPs only
   const { data, error } = await supabaseAdmin
     .from("web_events")
     .select("ip")
     .is("lat", null)
-    .not("ip", "is", null);
+    .not("ip", "is", null)
+    .limit(2000);
 
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 
-  const uniqueIps = Array.from(new Set((data ?? []).map(r => String(r.ip))))
-    .slice(0, 25); // hard cap per run
+  const uniqueIps = Array.from(new Set((data ?? []).map((r) => String(r.ip))))
+    .slice(0, 25); // 25 unique IPs per run
 
   if (uniqueIps.length === 0) {
-    return NextResponse.json({ ok: true, message: "No IPs to enrich", enrichedIps: 0 });
+    return NextResponse.json({ ok: true, version: "unique-ip-v1", attemptedIps: 0, enrichedIps: 0 });
   }
 
   let enrichedIps = 0;
@@ -32,9 +33,9 @@ export async function POST() {
 
   for (const ip of uniqueIps) {
     try {
-      await sleep(250); // be polite
+      await sleep(250);
 
-      // 2️⃣ Call geo provider (ipwho.is is rate-friendly)
+      // Use ipwho.is (JSON, generally less annoying than ipapi.co)
       const res = await fetch(`https://ipwho.is/${ip}`, {
         headers: { "User-Agent": "damstrong-dashboard/1.0" },
       });
@@ -46,7 +47,6 @@ export async function POST() {
         continue;
       }
 
-      // 3️⃣ Update ALL rows with this IP
       const { error: updErr } = await supabaseAdmin
         .from("web_events")
         .update({
@@ -72,9 +72,9 @@ export async function POST() {
 
   return NextResponse.json({
     ok: true,
+    version: "unique-ip-v1",
     attemptedIps: uniqueIps.length,
     enrichedIps,
     failures,
-    tip: "Run again to continue (25 unique IPs per run).",
   });
 }
