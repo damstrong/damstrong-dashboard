@@ -7,19 +7,21 @@ const supabaseAdmin = createClient(
   { auth: { persistSession: false } }
 );
 
-/**
- * event_key format example:
- *   v_qnbdlzsdj1767019964431|2025-12-29T15:04:31.123Z
- *
- * We extract the YYYY-MM-DD portion for filtering.
- */
+function daysBetween(from: string, to: string): string[] {
+  // returns list of YYYY-MM-DD inclusive (UTC-safe enough for just dates)
+  const out: string[] = [];
+  const start = new Date(`${from}T00:00:00.000Z`);
+  const end = new Date(`${to}T00:00:00.000Z`);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return out;
+  if (end < start) return out;
 
-function startOfDay(d: string) {
-  return `${d}T00:00:00.000Z`;
-}
-
-function endOfDay(d: string) {
-  return `${d}T23:59:59.999Z`;
+  for (let d = start; d <= end; d = new Date(d.getTime() + 86400000)) {
+    const yyyy = d.getUTCFullYear();
+    const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(d.getUTCDate()).padStart(2, "0");
+    out.push(`${yyyy}-${mm}-${dd}`);
+  }
+  return out;
 }
 
 export async function GET(req: Request) {
@@ -35,12 +37,34 @@ export async function GET(req: Request) {
       .not("lng", "is", null)
       .not("event_key", "is", null);
 
-    // Filter by date embedded in event_key
-    if (from) {
-      q = q.gte("event_key", `|${startOfDay(from)}`);
-    }
-    if (to) {
-      q = q.lte("event_key", `|${endOfDay(to)}`);
+    /**
+     * Since event_key looks like:
+     *   <something>|2025-12-29T...
+     *
+     * The only reliable filter without a real timestamp column is pattern matching:
+     *   event_key ilike '%|YYYY-MM-DD%'
+     *
+     * For a date range, we OR together each day.
+     */
+    if (from && to) {
+      const days = daysBetween(from, to);
+
+      // Prevent someone selecting 5 years and killing the DB
+      if (days.length > 120) {
+        return NextResponse.json(
+          { ok: false, error: "Date range too large (max 120 days for now)." },
+          { status: 400 }
+        );
+      }
+
+      if (days.length > 0) {
+        const ors = days.map((d) => `event_key.ilike.%|${d}%`).join(",");
+        q = q.or(ors);
+      }
+    } else if (from) {
+      q = q.ilike("event_key", `%|${from}%`);
+    } else if (to) {
+      q = q.ilike("event_key", `%|${to}%`);
     }
 
     const { data, error } = await q.limit(10000);
@@ -52,8 +76,8 @@ export async function GET(req: Request) {
     const agg = new Map<string, any>();
 
     for (const r of data ?? []) {
-      const lat = Number(r.lat);
-      const lng = Number(r.lng);
+      const lat = Number((r as any).lat);
+      const lng = Number((r as any).lng);
 
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
       if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
@@ -61,9 +85,8 @@ export async function GET(req: Request) {
       const key = `${lat.toFixed(6)},${lng.toFixed(6)},${r.city ?? ""},${r.region ?? ""},${r.country ?? ""}`;
       const cur = agg.get(key);
 
-      if (cur) {
-        cur.count += 1;
-      } else {
+      if (cur) cur.count += 1;
+      else {
         agg.set(key, {
           lat,
           lng,
